@@ -1,58 +1,49 @@
 # Third-Party Notices
 
-This document describes third-party components used by Stats 0.3.1. It is an engineering compliance record, not legal advice.
+Stats project-authored source code and documentation are licensed under the MIT License in `LICENSE`. That license does not replace or relicense the third-party components below.
 
-The root `LICENSE` applies only to Stats files authored for this project unless a file carries a separate notice. It does not replace the licenses of the components listed below.
+## Runtime and packaged components
 
-## Publication and binary boundary
+| Component | Version | Purpose | Included in Stats JAR | License and preserved notice |
+| --- | ---: | --- | --- | --- |
+| HikariCP | 5.1.0 | JDBC connection pooling | Yes, shaded without relocation | Apache-2.0; `META-INF/licenses/Stats/Apache-2.0.txt` |
+| SLF4J API | 1.7.36 | HikariCP runtime API | Yes, shaded without relocation | MIT; `META-INF/licenses/Stats/MIT-SLF4J.txt` |
+| Xerial SQLite JDBC | 3.46.1.3 | Local SQLite driver and native libraries | Yes, shaded without relocation | Apache-2.0; upstream license entries plus `META-INF/licenses/Stats/Apache-2.0.txt` |
+| Zentus SQLite JDBC portions | Included by SQLite JDBC 3.46.1.3 | Upstream-derived SQLite JDBC code | Yes, inside SQLite JDBC | BSD-2-Clause; `META-INF/licenses/Stats/BSD-2-Clause-Zentus.txt` |
+| SQLite | Included by SQLite JDBC 3.46.1.3 | Native SQLite engine | Yes, inside SQLite JDBC | Public domain; see the SQLite copyright page below |
+| PostgreSQL JDBC Driver | 42.7.5 | PostgreSQL driver | Yes, shaded without relocation | PostgreSQL/BSD-2-Clause; `META-INF/licenses/Stats/BSD-2-Clause-pgJDBC.txt` |
+| OnGres SCRAM client/common | 3.1, embedded by pgJDBC | SCRAM authentication | Yes, inside pgJDBC | BSD-2-Clause; upstream entries plus the two OnGres license files under `META-INF/licenses/Stats` |
+| OnGres StringPrep/SASLprep | 2.2, embedded by pgJDBC | SCRAM string preparation | Yes, inside pgJDBC | BSD-2-Clause; upstream entries plus the two OnGres license files under `META-INF/licenses/Stats` |
+| Checker Framework qualifiers | 3.48.3 | pgJDBC runtime annotations | Yes, transitive and shaded without relocation | MIT; `META-INF/licenses/Stats/MIT-Checker-Qual.txt` |
+| MariaDB Connector/J | 3.5.2 | MySQL and MariaDB driver | No; Paper resolves it from `plugin.yml` | LGPL-2.1-or-later; see the exact source and license below |
 
-This source repository does not publish a compiled Stats JAR. The default `shadowJar` build does not relocate dependencies; it merges dependency classes and service descriptors into one fat JAR. The inspected 0.3.1 JAR has SHA-256 `21fcde03e235f50db26412d01368e05818e29392c25cffd9e2c7021d7ce0c6e3`.
+MariaDB Connector/J is excluded from the Shadow JAR. Paper downloads the unmodified Maven artifact and adds it to the plugin classpath as a separate JAR. This keeps the LGPL component outside the MIT-licensed Stats archive and independently replaceable. A fresh server needs access to Maven Central during its first Stats startup. Cached restarts do not require a new download.
 
-The fat JAR contains third-party classes, but not every upstream license is retained under a unique JAR entry. Therefore, do not redistribute the fat JAR by itself. A distributor must accompany it with the applicable notices and license texts and independently satisfy each license's binary-distribution terms.
+## Compile, test, and build dependencies
 
-MariaDB Connector/J 3.5.2 is included in the default fat JAR and is licensed LGPL-2.1-or-later. GNU LGPL 2.1 section 6 requires prominent notice, a copy of the license, and one of its source and relinking mechanisms when distributing a combined work. Publishing the Stats source and Gradle build scripts provides the application-side material needed to rebuild, but does not by itself provide MariaDB Connector/J's complete corresponding source. A distributor of the fat JAR must also provide or offer equivalent access to the exact MariaDB Connector/J source and preserve the user's ability to replace or relink an interface-compatible modified library. The exact upstream source is available from the `3.5.2` tag and Maven Central source artifact.
+| Component | Version | Scope | Included in Stats JAR | License |
+| --- | ---: | --- | --- | --- |
+| Paper API | 26.2 build 112 | Compile-only server API | No | Paper repository license and per-file notices |
+| JUnit Jupiter | 5.11.4 | Test only | No | EPL-2.0 |
+| Shadow Gradle plugin | 9.6.1 | Build only | No | Apache-2.0 |
+| Gradle Wrapper / Gradle | 9.6.1 | Build bootstrap and build tool | No plugin runtime code | Apache-2.0 |
 
-Moving MariaDB Connector/J to Paper's external `libraries` mechanism would avoid embedding it, but that changes startup, offline-cache, and class-loader behavior. It is intentionally deferred to a separately versioned and runtime-tested release rather than changing the verified 0.3.1 artifact silently.
+Paper API transitive dependencies are not copied into the Stats JAR. The build verifies that Paper, Bukkit, and MariaDB Connector/J classes are absent. It also verifies the unique notice and license paths listed above.
 
-## Bundled in the default Stats JAR
+## Exact upstream sources
 
-| Component | Version | License | Included material and notice |
-| --- | --- | --- | --- |
-| HikariCP | 5.1.0 | Apache-2.0 | `com.zaxxer` classes. See `licenses/Apache-2.0.txt`. |
-| SLF4J API | 1.7.36 | MIT | Transitive HikariCP dependency under `org.slf4j`. See `licenses/MIT-SLF4J.txt`. |
-| sqlite-jdbc | 3.46.1.3 | Apache-2.0 | `org.sqlite` classes and native SQLite binaries. See `licenses/Apache-2.0.txt` and `licenses/NOTICE-sqlite-jdbc.txt`. |
-| Zentus SQLite JDBC portions | included by sqlite-jdbc 3.46.1.3 | BSD-2-Clause | See `licenses/BSD-2-Clause-Zentus.txt`. |
-| SQLite | 3.46.1 | Public Domain | Native SQLite code included by sqlite-jdbc; see the upstream SQLite copyright page and sqlite-jdbc release documentation. |
-| pgJDBC | 42.7.5 | BSD-2-Clause | `org.postgresql` classes. See `licenses/BSD-2-Clause-pgJDBC.txt`. |
-| OnGres SCRAM | 3.1, embedded by pgJDBC | BSD-2-Clause | See `licenses/BSD-2-Clause-OnGres-SCRAM-2017.txt`. |
-| OnGres StringPrep/SASLprep | 2.2, embedded by pgJDBC | BSD-2-Clause | See `licenses/BSD-2-Clause-OnGres-StringPrep-2019.txt`. |
-| Checker Qual | 3.48.3 | MIT | Transitive pgJDBC dependency under `org.checkerframework`. See `licenses/MIT-Checker-Qual.txt`. |
-| MariaDB Connector/J | 3.5.2 | LGPL-2.1-or-later | `org.mariadb` classes. See `licenses/LGPL-2.1-or-later-MariaDB-Connector-J.txt` and the section 6 note above. |
+- HikariCP 5.1.0: <https://github.com/brettwooldridge/HikariCP/tree/HikariCP-5.1.0>
+- SLF4J 1.7.36: <https://github.com/qos-ch/slf4j/tree/v_1.7.36>
+- SQLite JDBC 3.46.1.3: <https://github.com/xerial/sqlite-jdbc/tree/3.46.1.3>
+- SQLite copyright: <https://www.sqlite.org/copyright.html>
+- PostgreSQL JDBC Driver 42.7.5: <https://github.com/pgjdbc/pgjdbc/tree/REL42.7.5>
+- Checker Framework 3.48.3: <https://github.com/typetools/checker-framework/tree/checker-framework-3.48.3>
+- MariaDB Connector/J 3.5.2: <https://github.com/mariadb-corporation/mariadb-connector-j/tree/3.5.2>
+- MariaDB Connector/J license: <https://github.com/mariadb-corporation/mariadb-connector-j/blob/3.5.2/LICENSE>
+- Paper: <https://github.com/PaperMC/Paper>
+- Paper plugin library documentation: <https://docs.papermc.io/paper/dev/plugin-yml/#libraries>
+- JUnit 5.11.4: <https://github.com/junit-team/junit5/tree/r5.11.4>
+- Shadow 9.6.1: <https://github.com/GradleUp/shadow/tree/9.6.1>
+- Gradle 9.6.1: <https://github.com/gradle/gradle/tree/v9.6.1>
 
-Gson and Paper/Bukkit API classes are not included in the inspected Stats 0.3.1 JAR.
-
-## Repository and build-only components
-
-| Component | Version | Scope | License |
-| --- | --- | --- | --- |
-| Gradle wrapper | 9.6.1 | Wrapper scripts and `gradle-wrapper.jar` are committed; not included in Stats JAR | Apache-2.0 |
-| Shadow Gradle plugin | 9.6.1 | Build tool only | Apache-2.0 |
-| Paper API | 26.2 build 111 | `compileOnly` and test compile dependency; not included in Stats JAR | See the Paper repository's composite `LICENSE.md` |
-| JUnit | 5.11.4 | Test only; not included in Stats JAR | EPL-2.0 |
-
-The project has no dependency lockfile. Exact direct versions are declared in `build.gradle.kts`; Gradle resolves the transitive versions shown above.
-
-## Official sources
-
-- HikariCP 5.1.0: https://github.com/brettwooldridge/HikariCP/tree/HikariCP-5.1.0
-- SLF4J 1.7.36: https://github.com/qos-ch/slf4j/tree/v_1.7.36
-- sqlite-jdbc 3.46.1.3: https://github.com/xerial/sqlite-jdbc/tree/3.46.1.3
-- SQLite copyright and public-domain statement: https://www.sqlite.org/copyright.html
-- pgJDBC 42.7.5: https://github.com/pgjdbc/pgjdbc/tree/REL42.7.5
-- Checker Framework 3.48.3: https://github.com/typetools/checker-framework/tree/checker-framework-3.48.3
-- MariaDB Connector/J 3.5.2: https://github.com/mariadb-corporation/mariadb-connector-j/tree/3.5.2
-- GNU LGPL 2.1: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
-- Gradle: https://github.com/gradle/gradle
-- Shadow: https://github.com/GradleUp/shadow
-- Paper: https://github.com/PaperMC/Paper
-- JUnit: https://github.com/junit-team/junit-framework
+Before publishing a binary, compare this inventory with Gradle's resolved runtime classpath and inspect the final JAR. The `verifyDistribution` task enforces the required notice entries and MariaDB exclusion.

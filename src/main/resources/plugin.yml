@@ -3,6 +3,9 @@ version: ${version}
 main: com.playcity.stats.StatsPlugin
 api-version: "26.2"
 
+libraries:
+  - org.mariadb.jdbc:mariadb-java-client:3.5.2
+
 commands:
   stats:
     description: Stats admin command

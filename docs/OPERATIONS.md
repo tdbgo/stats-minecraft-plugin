@@ -54,7 +54,7 @@ database:
 
 ## 업데이트 체크리스트
 
-1. Java 25와 Paper `26.2` build 111 이상을 준비하고 현재 config의 `config-version`과 v4 변경점을 확인합니다.
+1. Java 25와 Paper `26.2` build 112를 준비하고 현재 config의 `config-version`과 v4 변경점을 확인합니다.
 2. DB를 백업합니다. 특히 v1에서 v2는 player hour/day에 열을 추가합니다.
 3. 새 JAR로 정상 재시작하고 schema migration 및 durable batch recovery 로그에 오류가 없는지 확인합니다.
 4. `/stats status`와 `/stats db ping`을 확인합니다.

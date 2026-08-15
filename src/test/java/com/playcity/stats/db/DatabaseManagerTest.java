@@ -28,6 +28,34 @@ class DatabaseManagerTest {
     File tempDir;
 
     @Test
+    void mysqlConfigurationLoadsExternalMariaDbDriverFromRuntimeClasspath() throws ClassNotFoundException {
+        YamlConfiguration config = new YamlConfiguration();
+        config.set("database.type", "mysql");
+        config.set("database.host", "db.internal");
+        config.set("database.port", 3307);
+        config.set("database.database", "block_stats");
+        config.set("database.username", "stats-user");
+        config.set("database.password", "test-password");
+        config.set("database.ssl.enabled", false);
+
+        DatabaseManager.PoolConfiguration pool = DatabaseManager.buildPoolConfiguration(
+            tempDir,
+            config,
+            DbType.MYSQL,
+            30
+        );
+
+        assertEquals("org.mariadb.jdbc.Driver", pool.hikari().getDriverClassName());
+        assertEquals("org.mariadb.jdbc.Driver", Class.forName("org.mariadb.jdbc.Driver").getName());
+        assertEquals(
+            "jdbc:mariadb://db.internal:3307/block_stats" +
+                "?useUnicode=true&characterEncoding=utf8" +
+                "&connectTimeout=5000&socketTimeout=30000&useSSL=false",
+            pool.connectionUrl()
+        );
+    }
+
+    @Test
     void postgresUsesDirectDataSourceAndPreservesConnectionIdentity() {
         YamlConfiguration config = postgresConfig();
 

@@ -39,3 +39,5 @@
 ## Paper 클래스 로더와 PostgreSQL
 
 PostgreSQL 연결은 `driverClassName`/`DriverManager` 등록 조회에 의존하지 않고 플러그인 클래스 로더에서 직접 생성한 `PGSimpleDataSource`를 Hikari에 전달합니다. JDBC URL의 설정 의미와 durable spool 저장소 식별 문자열은 기존과 동일하게 유지합니다.
+
+MariaDB Connector/J 3.5.2는 Stats 0.3.2부터 Shadow JAR에 포함하지 않습니다. Paper가 `plugin.yml`의 `libraries` 선언을 통해 Maven Central의 원본 JAR을 별도로 내려받아 플러그인 클래스 경로에 추가합니다. 기존 MySQL/MariaDB 설정, JDBC URL, 테이블, 데이터 의미는 변경하지 않습니다.

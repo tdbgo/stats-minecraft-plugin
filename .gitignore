@@ -4,6 +4,7 @@ build/
 bin/
 out/
 plan-plugins-data/
+.runtime-test/
 
 .idea/
 .vscode/
