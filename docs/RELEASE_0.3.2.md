@@ -40,4 +40,4 @@ The `verifyDistribution` build task, wired into `check`, asserts that the plugin
 
 - Release: <https://github.com/tdbgo/stats-minecraft-plugin/releases/tag/v0.3.2>
 - Issues: <https://github.com/tdbgo/stats-minecraft-plugin/issues>
-- Release history: [../CHANGELOG.md](../CHANGELOG.md)
+- Release history: <https://github.com/tdbgo/stats-minecraft-plugin/blob/main/CHANGELOG.md>
