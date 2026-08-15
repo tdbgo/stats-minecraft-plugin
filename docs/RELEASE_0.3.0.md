@@ -1,27 +1,33 @@
 # Stats 0.3.0
 
-## 릴리스 기준
+## Release baseline
 
 - Paper `26.2` build 111
 - Java 25
 - Gradle 9.6.1 wrapper
 - Shadow 9.6.1
 
-## 포함
+## Included
 
-- 비-SNAPSHOT 릴리스 버전과 descriptor/API 버전 일치
-- DB 전송 전 집계 snapshot의 체크섬·원자 이동 기반 durable spool
-- DB 장애 또는 종료 flush 실패 batch의 다음 기동 자동 재생
-- 손상 spool 보존 및 안전한 활성화 실패
-- `/stats status`의 durable pending batch 표시
-- Gradle 9용 JUnit Platform launcher와 Java 25 테스트 실행 설정
+- A non-SNAPSHOT release version, with the descriptor and API versions aligned to it
+- A durable spool for aggregate snapshots before database transmission, using a checksum and an atomic move
+- Automatic replay on the next startup of batches left unwritten by a database failure or a failed shutdown flush
+- Corrupt spool files preserved, with activation failing safely rather than discarding them
+- A durable pending batch count in `/stats status`
+- JUnit Platform launcher configuration for Gradle 9 and Java 25 test execution
 
-기존 DB 스키마, 명령, 권한, config 키는 변경하지 않습니다. `config-version`은 4를 유지합니다.
+Existing database schema, commands, permissions, and configuration keys are unchanged. `config-version` stays at `4`.
 
-## 과거 논의 중 보류
+## Deliberately deferred at this release
 
-- 원시 명령줄·전체 인자와 개별 블록 원본: 개인정보, 카디널리티, 저장량 증가 때문에 기존 정규화 집계 정책을 유지합니다.
-- 이벤트별 연속 WAL: 5분 사이 강제 종료까지 막을 수 있지만 이벤트 hot path 파일 I/O와 저장량 설계가 필요해 보류합니다.
-- 위험 감지와 실시간 경보: 오탐 방지, 권한/보호구역 연동, 5분 세부 bucket 설계가 선행되어야 하므로 분석 레이어 과제로 유지합니다.
-- config 파일 자동 재작성 마이그레이션: 주석 보존 YAML과 백업·원자 교체 정책이 필요해 현재의 런타임 default 병합을 유지합니다.
-- 통계 시각화, 장기 rollup, Plan/FAWE 백필 자동화: collector 릴리스와 분리된 배치/웹 계층 범위로 유지합니다.
+These were considered and set aside. See the linked documents for their current status.
+
+- **Raw command lines, full arguments, and per-block source records** — retained the existing normalized aggregate policy because of privacy, cardinality, and storage growth. See [COMMAND_NORMALIZATION.md](COMMAND_NORMALIZATION.md).
+- **A continuous per-event write-ahead log** — would close the window of a forced kill between flushes, but requires file I/O on the event hot path and a storage design to match. See [FLUSHING.md](FLUSHING.md).
+- **Risk detection and real-time alerting** — needs false-positive handling, permission and protected-region integration, and a 5-minute bucket design first. Kept as an analysis-layer topic; see [RISK_DETECTION.md](RISK_DETECTION.md).
+- **Automatic configuration file rewriting** — needs comment-preserving YAML plus a backup and atomic-replacement policy, so the runtime default merge was kept. See [CONFIG_MIGRATION.md](CONFIG_MIGRATION.md).
+- **Visualization, long-term rollups, and automated backfill** — kept out of the collector release as separate batch and web-layer scope. See [ANALYTICS_IDEAS.md](ANALYTICS_IDEAS.md) and [IMPORT_EXISTING_DATA.md](IMPORT_EXISTING_DATA.md).
+
+All five remain unimplemented in 0.3.2.
+
+See [../CHANGELOG.md](../CHANGELOG.md) for the full release history.

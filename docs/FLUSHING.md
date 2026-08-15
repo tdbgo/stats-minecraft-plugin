@@ -1,42 +1,43 @@
-# Stats - 메모리 집계와 배치 플러시
+# Aggregation and batch flushing
 
-목표는 이벤트마다 DB에 쓰지 않고 메모리에서 집계한 뒤, DB I/O를 전용 스레드에서 직렬 처리하는 것입니다. 수집과 업로드는 `setup.enabled: true`일 때만 동작합니다.
+The goal is to avoid writing to the database on every event: counters accumulate in memory, and database I/O is serialized on a dedicated thread. Collection and upload run only when `setup.enabled` is `true`.
 
-## 현재 구현
+## Implementation
 
-1. Bukkit/Paper 이벤트와 5초 기본 tick에서 `StatsAccumulator`에 카운터를 누적합니다.
-2. 기본 300초마다 단일 `Stats-IO` executor에 플러시 작업을 예약합니다.
-3. `drainDeltas()`는 짧은 lock 안에서 활성 버퍼 참조만 새 버퍼로 교체합니다.
-4. 교체된 버퍼의 불변 스냅샷 생성, spool 파일 기록, JDBC 처리는 lock 밖의 I/O 스레드에서 수행합니다.
-5. DB 전송 전에 스냅샷을 `plugins/Stats/spool/<storage-id>/<batch-id>.pending`에 체크섬과 함께 기록하고 파일을 강제 동기화한 뒤 원자 이동합니다.
-6. 한 스냅샷은 한 DB 트랜잭션으로 적용합니다. `flush.maxBatchRows`는 JDBC `executeBatch()` 호출 크기만 나누며 트랜잭션 경계는 바꾸지 않습니다.
-7. DB 커밋 성공 또는 기존 `batch_id` 확인 후에만 spool 파일을 삭제합니다. 시작/reload 시 현재 DB 대상과 일치하는 미완료 파일을 먼저 재생합니다.
+1. Paper events and the 5-second default tick accumulate counters in `StatsAccumulator`.
+2. Every 300 seconds by default, a flush task is scheduled on the single `Stats-IO` executor.
+3. `drainDeltas()` swaps the active buffer reference for a fresh one inside a short lock, and nothing else.
+4. The immutable snapshot, the spool file write, and the JDBC work all happen on the I/O thread, outside that lock.
+5. Before transmission the snapshot is written with a checksum to `plugins/Stats/spool/<storage-id>/<batch-id>.pending`, force-synced, then atomically moved into place.
+6. One snapshot is applied as one database transaction. `flush.maxBatchRows` only divides `executeBatch()` calls; it does not change the transaction boundary.
+7. The spool file is deleted only after a successful commit, or after confirming the `batch_id` was already recorded. On startup and reload, pending files matching the current database target are replayed first.
 
-수집 메서드는 동시 접근에 안전합니다. 특히 `AsyncChatEvent`와 메인 스레드 이벤트가 플러시와 겹쳐도, 버퍼 스왑 전후 어느 한 스냅샷에 정확히 포함됩니다.
+Collection methods are safe under concurrent access. Even when an asynchronous chat event and a main-thread event overlap a flush, each counted event lands in exactly one snapshot — the one before or the one after the buffer swap.
 
-## 무활동 시 통신
+## Behavior when nothing is pending
 
-- 300초 타이머와 로컬 executor 작업은 계속 깨어납니다.
-- 버퍼가 비어 있으면 `DataSource#getConnection()`을 호출하지 않으므로 SQLite 파일 접근이나 원격 DB 네트워크 통신은 발생하지 않습니다.
-- 원격 DB 풀 기본값은 `minimumIdle: 0`, `maximumPoolSize: 2`입니다. SQLite는 코드에서 1개 연결로 제한합니다.
-- 온라인 플레이어가 있으면 명시적 입력이 없어도 playtime/AFK가 누적되므로 플러시는 비어 있지 않습니다. 접속자도 없고 이벤트도 없을 때만 완전한 빈 플러시입니다.
+- The 300-second timer and the local executor task still wake up.
+- If the buffer is empty, `DataSource#getConnection()` is never called, so there is no SQLite file access and no remote database network traffic for that cycle.
+- Remote pool defaults are `minimumIdle: 0` and `maximumPoolSize: 2`. SQLite is limited in code to a single connection.
+- While any player is online, playtime and AFK seconds accrue without explicit input, so those flushes are not empty. A fully empty flush requires no players online and no events.
 
-## 실패와 중복 방지
+## Failure handling and duplicate prevention
 
-- 비어 있지 않은 스냅샷마다 UUID `batch_id`를 부여합니다.
-- 트랜잭션 첫 단계에서 `ingest_batch`에 `batch_id`를 등록합니다.
-- DB 오류가 나면 같은 불변 스냅샷을 메모리와 로컬 spool에 유지하고 다음 플러시 또는 다음 기동에서 같은 `batch_id`로 재시도합니다.
-- 응답 유실처럼 실제 커밋 여부가 불확실해도 이미 등록된 `batch_id`면 사실 테이블을 다시 더하지 않습니다.
-- 실패한 트랜잭션은 명시적으로 rollback하며, 그 트랜잭션에서 만든 명령/variant ID 캐시도 비웁니다.
-- reload는 이전 런타임의 미전송 배치를 별도 큐에 보존하고 새 런타임 플러시 뒤에 재시도합니다.
+- Each non-empty snapshot receives a UUID `batch_id`.
+- The first step of the transaction claims that `batch_id` in `ingest_batch`.
+- On a database error, the same immutable snapshot is retained in memory and in the local spool, and retried with the same `batch_id` on the next flush or the next startup.
+- If the outcome of a commit is genuinely unknown — for example a lost response — an already-recorded `batch_id` causes the fact tables to be left alone rather than incremented again.
+- A failed transaction is explicitly rolled back, and the command and variant ID caches built during it are cleared.
+- Reload keeps the previous runtime's undelivered batches in a separate queue and retries them after the new runtime's flush.
 
-`ingest_batch`는 비어 있지 않은 플러시당 1행이므로 5분 주기 최대 약 288행/일, 105,120행/년입니다. 현재 자동 삭제는 하지 않습니다.
+`ingest_batch` grows by one row per non-empty flush. The scheduled 300-second timer alone can add up to roughly 288 rows per day and 105,120 per year when every interval has data; manual, reload, and shutdown flushes can add more. There is no automatic cleanup.
 
-## 로컬 spool과 남은 내구성 한계
+## Local spool and remaining durability limits
 
-- spool 디렉터리는 DB 종류, 안전한 JDBC 대상, table prefix를 해시한 `storage-id`별로 분리합니다. 비밀번호는 식별자에 포함하지 않습니다.
-- 손상되었거나 체크섬이 맞지 않는 파일은 삭제하지 않고 활성화를 실패시켜 운영자가 원본을 보존한 채 조사할 수 있게 합니다.
-- DB가 커밋됐지만 spool 삭제 전에 프로세스가 종료되어도 `ingest_batch.batch_id`가 중복 합산을 막습니다.
-- spool에는 좌표, 채팅 본문, 원시 명령줄이 아니라 현재의 큐레이션된 집계 스냅샷만 기록합니다.
+- Spool directories are separated by a `storage-id` hash of the database type, the safe JDBC target, and the table prefix. The password is not part of that identity.
+- A corrupt file or a checksum mismatch is not deleted. Activation fails so the operator can investigate with the original preserved.
+- If the database commits but the process dies before the spool file is removed, `ingest_batch.batch_id` still prevents double counting on replay.
+- The spool holds only the curated aggregate snapshot — never coordinates, chat bodies, or raw command lines.
+- Spool payloads are validated against a 64 MiB limit. An abnormal snapshot exceeding it fails before transmission and stays in memory.
 
-아직 drain되지 않은 활성 메모리 버퍼는 5분 플러시 사이의 강제 프로세스 종료에서 유실될 수 있습니다. 이벤트마다 디스크에 기록하는 연속 WAL은 메인 이벤트 경로의 I/O와 저장량을 크게 늘리므로 이번 릴리스에는 포함하지 않습니다. 정상 plugin disable과 DB flush 실패 후 종료에서는 최종 스냅샷을 spool에 남깁니다.
+An active memory buffer that has not yet been drained can be lost if the process is killed between flushes. A continuous per-event write-ahead log would close that window but would add file I/O to the main event path and materially increase storage, so it is not part of this release. On normal plugin disable, the final snapshot is retained for the next start when the spool write succeeds; if both the database flush and spool write fail, the plugin logs that the batch may be lost.

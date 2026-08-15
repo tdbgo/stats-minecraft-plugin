@@ -1,52 +1,95 @@
-# Stats - config.yml 가이드
+# Configuration reference
 
-현재 설정 버전은 `4`입니다. 실제 서버 파일은 `plugins/Stats/config.yml`이며, 최초 실행 시 리소스 템플릿을 I/O 전용 스레드에서 생성합니다.
+Describes the behavior of Stats 0.3.2. The current configuration version is `4`.
 
-## 최초 실행
+The live file is `plugins/Stats/config.yml`. It is created from the bundled template on first run, written by the plugin's I/O thread. Changes take effect on a server restart or `/stats reload`, never immediately on save.
 
-- 기본값 `setup.enabled: false`에서는 DB 연결, 스키마 생성, 수집, 업로드를 모두 하지 않습니다.
-- DB 설정을 확인한 뒤 `setup.enabled: true`로 변경하고 서버를 재시작하거나 `/stats reload`를 실행합니다.
-- reload 초기화가 실패하면 기존 정상 런타임과 기존 수집 버퍼를 유지합니다.
+## First run
 
-## DB
+- With the default `setup.enabled: false`, Stats opens no database connection, creates no schema, collects nothing, and uploads nothing. It logs a safe-mode warning and stops there.
+- Review the database settings, set `setup.enabled: true`, then restart or run `/stats reload`.
+- If reload initialization fails, the previously working runtime and its collection buffers are kept. The failure is reported to the command sender and the log.
 
-- `database.type`: `sqlite`, `postgres`, `mysql` 중 하나입니다. 알 수 없는 값은 시작 실패로 처리하며 SQLite로 묵시적 fallback하지 않습니다.
-- `database.tablePrefix`: 기본 `mstats_`. 문자/`_`로 시작하고 영문자, 숫자, `_`만 포함하며 `_` 자동 추가 후 최대 24자입니다. 위반하면 활성화를 실패시킵니다.
-- `database.queryTimeoutSeconds`: JDBC 쿼리 및 원격 DB socket 제한시간입니다. 허용 범위는 1~300초, 기본 30초입니다.
-- `database.sqlite.file`: 플러그인 데이터 폴더 기준 SQLite 파일입니다.
-- `database.sqlite.pragmas.*`, `busyTimeoutMs`: WAL, 동기화, FK, lock 대기 설정입니다.
-- `database.host`, `port`, `database`, `schema`, `username`, `password`, `ssl.*`: 원격 DB 연결 설정입니다. `schema`는 PostgreSQL에서만 사용합니다.
+## Database
 
-## 연결 풀
+| Key | Default | Range and behavior |
+| --- | --- | --- |
+| `database.type` | `sqlite` | `sqlite`, `postgres`, `mysql`. Also accepts `sqlite3`; `postgresql`, `pg`; `mariadb`, `maria`. An unrecognized value fails startup — there is no silent fallback to SQLite. |
+| `database.tablePrefix` | `mstats_` | Must start with a letter or underscore and contain only letters, digits, and underscores. A missing trailing `_` is appended. Maximum 24 characters after that. A violation fails activation. |
+| `database.queryTimeoutSeconds` | `30` | 1–300. Applied as the JDBC query timeout and, for remote engines, as the socket timeout. Connection acquisition uses the separate pool timeout below. |
 
-- `database.pool.maximumPoolSize`: 기본 2, 코드상 1~32로 제한합니다. 플러시/핑/리로드 I/O가 단일 executor에서 직렬 처리되므로 큰 풀은 이점이 거의 없습니다.
-- `database.pool.minimumIdle`: 기본 0. 무활동 중 원격 연결 유지를 피합니다.
-- `connectionTimeoutMs`, `idleTimeoutMs`, `maxLifetimeMs`: HikariCP 설정입니다.
-- SQLite는 설정과 무관하게 최대 1개, 최소 idle 0개로 제한합니다.
+### SQLite
 
-## 스키마
+| Key | Default | Notes |
+| --- | --- | --- |
+| `database.sqlite.file` | `stats.db` | Resolved inside the plugin data folder. |
+| `database.sqlite.pragmas.journal_mode` | `WAL` | Passed to the driver as a data source property. |
+| `database.sqlite.pragmas.synchronous` | `NORMAL` | |
+| `database.sqlite.pragmas.foreign_keys` | `ON` | |
+| `database.sqlite.busyTimeoutMs` | `5000` | Lock wait before the driver gives up. |
 
-- `database.migrations.autoCreateTables`: `true`면 스키마와 인덱스를 생성합니다.
-- `database.migrations.autoMigrate`: `true`면 지원되는 이전 스키마의 누락 열을 추가합니다.
-- 현재 자동 마이그레이션은 schema v2의 텔레포트 열 추가를 포함합니다.
-- `autoCreateTables: false`이면 외부에서 DDL을 적용했다는 전제로 자동 검증/생성을 건너뜁니다.
+### Remote engines
 
-## 수집과 플러시
+| Key | Default | Notes |
+| --- | --- | --- |
+| `database.host` | `127.0.0.1` | |
+| `database.port` | `5432` | **The shipped value is the PostgreSQL port.** MySQL and MariaDB operators must set `3306` explicitly. The value present in the file always wins over the engine-specific code default. |
+| `database.database` | `minecraft` | |
+| `database.schema` | `public` | PostgreSQL only; applied as `currentSchema`. |
+| `database.username` | `stats` | |
+| `database.password` | `CHANGE_ME` | Never included in the durable spool storage identity, and never written to the log. |
+| `database.ssl.enabled` | `false` | When `false`, PostgreSQL uses `sslmode=disable` and MySQL/MariaDB uses `useSSL=false`. |
+| `database.ssl.mode` | `prefer` | PostgreSQL only: `disable`, `prefer`, `required`, `verify-ca`, `verify-full`. Used only when `ssl.enabled` is `true`. |
 
-- `flush.intervalSeconds`: 기본 300초, 허용 범위 10~86,400초입니다. 빈 버퍼는 JDBC 호출 없이 종료합니다.
-- `flush.maxBatchRows`: JDBC batch 분할 크기, 허용 범위 1~100,000입니다.
-- `tick.intervalSeconds`: playtime, AFK, 이동거리 샘플링 주기, 허용 범위 1~60초입니다.
-- `afk.thresholdSeconds`: 마지막 활동 이후 AFK 판정 시간, 허용 범위 5~86,400초입니다.
+PostgreSQL connections are built from a directly constructed `PGSimpleDataSource` with `applicationName=Stats`. MySQL and MariaDB use a `jdbc:mariadb://` URL with the MariaDB Connector/J driver class.
 
-## 운영 명령
+## Connection pool
 
-- `commands.enabled`: Stats 관리 명령 전체를 켜거나 끕니다.
-- `commands.allowReload`: `/stats reload`
-- `commands.allowDbPing`: `/stats db ping`
-- `commands.allowForceFlush`: `/stats flush`
+| Key | Default | Range and behavior |
+| --- | --- | --- |
+| `database.pool.maximumPoolSize` | `2` | Bounded to 1–32. Flush, ping, and reload I/O are serialized on a single executor, so a large pool gains little. |
+| `database.pool.minimumIdle` | `0` | Bounded to 0 through the effective maximum. Avoids holding a remote connection while the server is idle. |
+| `database.pool.connectionTimeoutMs` | `5000` | Also derives the driver-level connect timeout. |
+| `database.pool.idleTimeoutMs` | `600000` | |
+| `database.pool.maxLifetimeMs` | `1800000` | |
 
-모든 관리 명령은 `stats.admin` 권한 또는 OP가 필요합니다.
+SQLite is forced to a maximum pool size of 1 and a minimum idle of 0 regardless of what these keys say.
 
-## 비수집 설정
+## Schema management
 
-v4에서는 구현되지 않은 `riskDetection.*`, `privacy.*`, `logging.*` 템플릿 키를 제거했습니다. 이전 config에 남아 있어도 무시됩니다. 이 수집기는 설정과 관계없이 채팅 본문, IP, 좌표, 인벤토리 스냅샷을 저장하지 않으며 위험 경보는 외부 분석 계층의 책임입니다.
+| Key | Default | Behavior |
+| --- | --- | --- |
+| `database.migrations.autoCreateTables` | `true` | Creates missing tables and indexes on activation. When `false`, Stats assumes the DDL was applied externally and skips creation and verification entirely. |
+| `database.migrations.autoMigrate` | `true` | Adds missing columns for supported older schemas. When `false`, a missing column fails activation instead. |
+
+The current automatic migration covers the schema v2 teleport columns on the player hour and day tables. A database whose recorded `schema_version` is newer than the plugin supports fails activation.
+
+## Collection and flushing
+
+| Key | Default | Range and behavior |
+| --- | --- | --- |
+| `flush.intervalSeconds` | `300` | 10–86,400. An empty buffer completes without any JDBC call. |
+| `flush.maxBatchRows` | `5000` | 1–100,000. Splits JDBC batch execution only; it does not change transaction boundaries. |
+| `tick.intervalSeconds` | `5` | 1–60. Sampling period for playtime, AFK accounting, and travel distance. |
+| `afk.thresholdSeconds` | `60` | 5–86,400. Idle time after the last activity signal before a player counts as AFK. |
+
+Values outside the accepted range are clamped to the nearest bound rather than rejected.
+
+## Administration commands
+
+| Key | Default | Gates |
+| --- | --- | --- |
+| `commands.enabled` | `true` | All `/stats` subcommands, including `help` and `status`. |
+| `commands.allowReload` | `true` | `/stats reload` |
+| `commands.allowDbPing` | `true` | `/stats db ping` |
+| `commands.allowForceFlush` | `true` | `/stats flush` |
+
+Every administration command requires the `stats.admin` permission or operator status.
+
+Setting `commands.enabled: false` also blocks `/stats reload`, so re-enabling it requires editing the file on disk and restarting the server.
+
+## Keys that no longer exist
+
+Version 4 removed the unimplemented `riskDetection.*`, `privacy.*`, and `logging.*` template keys. If they remain in an older file they are ignored.
+
+Regardless of configuration, this collector does not store chat message bodies, IP addresses, coordinates, or inventory snapshots. Per-hour chat message and character *counts* are collected — see [DATA_CATALOG.md](DATA_CATALOG.md). Risk alerting is not implemented and is the responsibility of an external analysis layer.

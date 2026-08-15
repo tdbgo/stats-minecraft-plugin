@@ -1,37 +1,66 @@
-# Stats — 기존 데이터(Postgres) 백필 가이드
+# PostgreSQL backfill guide (manual workflow)
 
-이 문서는 기존 서버에 이미 존재하는 플러그인 데이터(Plan/FAWE)를 **Stats Postgres 스키마(`mstats_*`)로 변환**해 적재하는 방법을 정리합니다.
+> **Not a plugin feature.** Stats 0.3.2 performs no backfill and has no import command. This document describes a manual procedure run outside the server, using the conversion scripts in the repository's `scripts/` directory against database files you supply. Nothing here happens automatically, and the plugin is not involved in any step except the schema it defines.
+>
+> Read [IMPORT_EXISTING_DATA.md](IMPORT_EXISTING_DATA.md) first for what can and cannot be recovered from each source.
 
-## 1) 무엇이 백필되는가
-- Plan(`plugins/Plan/database.db`)
-  - `mstats_dim_player`
-  - `mstats_fact_session` (월드는 “세션 내 체류시간이 가장 큰 월드”로 추정)
-  - `mstats_fact_player_day` (세션을 day로 분할 롤업)
-- FAWE(`plugins/FastAsyncWorldEdit/history/**/summary.db`)
-  - `mstats_dim_command`, `mstats_dim_command_variant`
-  - `mstats_fact_command_day`, `mstats_fact_command_hour` (WorldEdit 계열 중심)
+This describes converting existing plugin data into the Stats PostgreSQL schema (`mstats_*`) and loading it.
 
-## 2) 준비
-- Postgres에 Stats 스키마 생성: `sql/postgres/schema.sql`
-- Stats의 테이블 prefix 확인: `plugins/Stats/config.yml`의 `database.tablePrefix` (기본 `mstats_`)
+## 1. What is backfilled
 
-## 3) 변환 파일 생성(워크스페이스에서 실행)
-- 실행:
-  - `python scripts/export_existing_to_pg.py --out out/pg-migration`
-  - 또는 `powershell -File scripts/export_existing_to_pg.ps1`
-- 출력:
-  - `out/pg-migration/load.sql`
-  - `out/pg-migration/*.csv`
-  - `out/pg-migration/report.txt`
+**From a Plan (Player Analytics) database**
 
-## 4) Postgres에 적재
-`out/pg-migration` 디렉토리에서 `psql`을 실행하는 것이 가장 단순합니다(상대 경로 `\copy` 사용).
+- `mstats_dim_player`
+- `mstats_fact_session` — the world is inferred as the world with the greatest dwell time within the session
+- `mstats_fact_player_day` — sessions split and rolled up per day
 
-- 예시:
-  - `cd out/pg-migration`
-  - `psql "postgresql://USER:PASSWORD@HOST:5432/DBNAME" -f load.sql`
+**From FastAsyncWorldEdit history summaries**
 
-## 5) 주의사항
-- `load.sql`은 “merge(합산)” 업서트를 사용합니다(`fact_player_day`, `fact_command_*`). 동일 데이터를 여러 번 적재하면 값이 누적될 수 있습니다.
-- `fact_session`은 현재 “best-effort insert”이며, 타겟 DB가 비어있다는 가정이 가장 안전합니다.
+- `mstats_dim_command`, `mstats_dim_command_variant`
+- `mstats_fact_command_day`, `mstats_fact_command_hour` — WorldEdit-family commands
 
+## 2. Preparation
+
+- Create the Stats schema in PostgreSQL from `sql/postgres/schema.sql`.
+- Confirm the table prefix in `plugins/Stats/config.yml` under `database.tablePrefix`; the default is `mstats_`. The generated SQL must match the prefix the plugin uses, or the plugin will write to a different set of tables.
+- Take a backup of the target database. The load is additive and is not designed to be undone.
+
+## 3. Generate the conversion files
+
+Run one of the conversion scripts from the repository root, pointing it at an output directory:
+
+```text
+python scripts/export_existing_to_pg.py --out out/pg-migration
+```
+
+or the PowerShell equivalent:
+
+```text
+powershell -File scripts/export_existing_to_pg.ps1
+```
+
+Output:
+
+- `out/pg-migration/load.sql`
+- `out/pg-migration/*.csv`
+- `out/pg-migration/report.txt`
+
+Review `report.txt` before loading anything.
+
+## 4. Load into PostgreSQL
+
+Running `psql` from inside the output directory is simplest, because `load.sql` uses relative `\copy` paths:
+
+```text
+cd out/pg-migration
+psql "postgresql://USER:PASSWORD@HOST:5432/DBNAME" -f load.sql
+```
+
+Use a connection string appropriate to your environment, and avoid placing credentials in shell history where that matters.
+
+## 5. Cautions
+
+- `load.sql` uses merge (additive) upserts for `fact_player_day` and `fact_command_*`. **Loading the same data twice accumulates the values.** Load once, and verify before repeating.
+- `fact_session` is a best-effort insert. It is safest when the target table is empty.
+- Backfilled rows are not distinguishable from collected rows afterwards. Record what you loaded and for which date range.
+- Run the backfill before or during a maintenance window rather than against a busy production database.

@@ -1,38 +1,38 @@
-# Stats - 운영 명령과 체크리스트
+# Operations
 
-모든 명령은 `stats.admin` 권한 또는 OP가 필요하며, `commands.enabled`와 각 `allow*` 설정의 영향을 받습니다.
+Every command requires the `stats.admin` permission or operator status, and is subject to `commands.enabled` and the individual `allow*` settings.
 
-## 최초 활성화
+## First activation
 
-1. 서버를 한 번 실행해 `plugins/Stats/config.yml`과 `command-aliases.yml`을 생성합니다.
-2. DB 설정을 확인하고 `setup.enabled: true`로 변경합니다.
-3. 서버 재시작 또는 `/stats reload`를 실행합니다.
-4. `/stats status`, `/stats db ping`, `/stats db health`로 상태를 확인합니다.
+1. Start the server once to create `plugins/Stats/config.yml` and `plugins/Stats/command-aliases.yml`.
+2. Review the database settings and set `setup.enabled: true`.
+3. Restart the server or run `/stats reload`.
+4. Confirm with `/stats status`, `/stats db ping`, and `/stats db health`.
 
-안전 모드에서는 DB 연결도 만들지 않습니다.
+In safe mode, no database connection is created at all.
 
-## 구현된 명령
+## Implemented commands
 
 - `/stats reload`
-  - config와 alias 파일 읽기, 유효성 검사, DB 풀/스키마 초기화를 `Stats-IO`에서 수행합니다.
-  - 새 후보가 완전히 준비된 뒤 메인 스레드에서 교체합니다.
-  - 실패하면 기존 런타임을 계속 사용합니다.
-  - 기존 버퍼와 이미 실패한 배치는 retired queue에서 같은 DB로 계속 플러시합니다.
-  - DB type/prefix 변경은 데이터 이관이 아닙니다. 이전 컨텍스트는 이전 DB에 남은 배치를 먼저 기록하고 닫습니다.
+  - Reads the config and alias files, validates them, and initializes the connection pool and schema on the `Stats-IO` thread.
+  - Swaps to the new runtime on the main thread only once the candidate is fully ready.
+  - On failure, the existing runtime continues.
+  - Existing buffers and already-failed batches keep flushing to their original database from a retired queue.
+  - Changing the database type or prefix is not a data migration. The previous context first writes its remaining batches to the previous database, then closes.
 - `/stats status`
-  - 플러그인 버전, active/initializing, DB type/prefix, 현재 보류 행 수, durable pending batch 수, retired runtime 수, 최근 reload/flush 시각과 오류를 표시합니다.
+  - Plugin version, `active`/`initializing`, database type and prefix, current pending row count, durable pending batch count, retired runtime count, and the most recent reload, flush attempt, flush success, and flush error.
 - `/stats db ping`
-  - I/O executor에서 `SELECT 1`을 실행하고 지연시간을 출력합니다.
+  - Executes `SELECT 1` on the I/O executor and prints the latency.
 - `/stats db health`
-  - Hikari pool의 active/idle/total/awaiting connection 수를 표시합니다. SQL을 실행하지 않습니다.
+  - Prints the connection pool's active, idle, total, and awaiting counts. Executes no SQL.
 - `/stats flush`
-  - 즉시 비동기 플러시를 예약합니다. 이미 실행/대기 중이면 중복 예약하지 않습니다.
+  - Schedules an immediate asynchronous flush. It does not queue a duplicate if one is already running or pending.
 
-임의 SQL, export/import, test-write, migration 조회 명령은 현재 구현되어 있지 않습니다.
+Arbitrary SQL, export, import, test-write, and migration query commands are not implemented.
 
-## 300초 무활동 확인
+## Verifying idle behavior
 
-접속자와 이벤트가 모두 없으면 300초마다 로컬 timer/executor만 실행되고 JDBC 연결은 요청하지 않습니다. 원격 연결을 무활동 중 유지하지 않으려면 v4 기본값처럼 다음을 사용합니다.
+With no players online and no events, only the local timer and executor run every 300 seconds; no JDBC connection is requested. To avoid holding a remote connection while idle, use the version 4 defaults:
 
 ```yaml
 database:
@@ -41,23 +41,23 @@ database:
     minimumIdle: 0
 ```
 
-기존 v3 config에 10/2가 명시돼 있으면 자동으로 덮어쓰지 않으므로 직접 변경해야 합니다.
+An older configuration that explicitly specifies `10` and `2` is treated as a deliberate operator setting and is not overwritten. Change it by hand to adopt the low-idle behavior.
 
-## 장애와 종료
+## Failures and shutdown
 
-- 플러시 실패 시 `/stats status`의 `lastFlushError`와 서버 로그를 확인합니다.
-- 실패 배치는 메모리와 `plugins/Stats/spool/<storage-id>/`에 유지되므로 DB 복구 후 `/stats flush`로 즉시 재시도하거나 다음 기동에서 자동 재생할 수 있습니다.
-- 같은 snapshot 재시도는 `ingest_batch.batch_id`로 중복 합산을 막습니다.
-- 정상 plugin disable은 온라인 세션을 마감하고 비동기 최종 플러시를 예약합니다. DB 장애 시 최종 batch는 spool에 남습니다.
-- spool 손상/체크섬 오류는 파일을 보존한 채 활성화를 실패시킵니다. 해당 파일을 임의 삭제하기 전에 복사본과 서버 로그를 확보합니다.
-- 아직 5분 스냅샷으로 drain되지 않은 활성 메모리 버퍼는 강제 프로세스 종료 시 유실될 수 있습니다.
+- On a flush failure, check `lastFlushError` in `/stats status` and the server log.
+- Failed batches are retained in memory and in `plugins/Stats/spool/<storage-id>/`, so after the database recovers you can retry immediately with `/stats flush`, or let the next startup replay them automatically.
+- Retrying the same snapshot cannot double-count, because `ingest_batch.batch_id` guards it.
+- A normal plugin disable closes online sessions and schedules a final asynchronous flush. If the database is down but the spool write succeeds, that final batch stays in the spool. If both operations fail, the plugin logs that the batch may be lost.
+- A corrupt spool file or checksum error preserves the file and fails activation. Secure a copy of the file and the server log before deleting anything.
+- An active memory buffer not yet drained into a snapshot can be lost on a forced process kill.
 
-## 업데이트 체크리스트
+## Upgrade checklist
 
-1. Java 25와 Paper `26.2` build 112를 준비하고 현재 config의 `config-version`과 v4 변경점을 확인합니다.
-2. DB를 백업합니다. 특히 v1에서 v2는 player hour/day에 열을 추가합니다.
-3. 새 JAR로 정상 재시작하고 schema migration 및 durable batch recovery 로그에 오류가 없는지 확인합니다.
-4. `/stats status`와 `/stats db ping`을 확인합니다.
-5. 테스트 활동 후 `/stats flush`를 실행하고 fact/ingest 테이블 증가를 확인합니다.
+1. Prepare Java 25 and Paper `26.2` build 112, and review your current `config-version` against the version 4 changes.
+2. Back up the database. The v1 to v2 step in particular adds columns to the player hour and day tables.
+3. Restart normally with the new JAR and confirm the schema migration and durable batch recovery logs are free of errors.
+4. Check `/stats status` and `/stats db ping`.
+5. Generate some test activity, run `/stats flush`, and confirm the fact and ingest tables grew.
 
-SQLite에서 PostgreSQL/MySQL로 옮기는 절차는 `docs/DATA_MIGRATION.md`를 따르되, 현재 플러그인에 export/import 명령이 없으므로 외부 이관 도구가 필요합니다.
+Moving from SQLite to PostgreSQL or MySQL requires external tooling, because the plugin has no export or import command. [DATA_MIGRATION.md](DATA_MIGRATION.md) is a design proposal for that work, not a description of shipped behavior.
