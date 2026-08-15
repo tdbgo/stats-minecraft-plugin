@@ -1,0 +1,15 @@
+name: Stats
+version: ${version}
+main: com.playcity.stats.StatsPlugin
+api-version: "26.2"
+
+commands:
+  stats:
+    description: Stats admin command
+    usage: /stats <reload|status|db|flush>
+    permission: stats.admin
+
+permissions:
+  stats.admin:
+    description: Allows Stats administration commands
+    default: op

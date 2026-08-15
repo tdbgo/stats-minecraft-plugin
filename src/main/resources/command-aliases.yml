@@ -1,0 +1,93 @@
+# Stats command normalization rules.
+# Only explicitly listed, low-cardinality argument classes are captured.
+version: 1
+
+rules:
+  - canonical: "minecraft:gamemode"
+    match:
+      - "^gamemode$"
+      - "^gm$"
+      - "^minecraft:gamemode$"
+      - "^gms$"
+      - "^gmc$"
+      - "^gma$"
+      - "^gmsp$"
+    capture:
+      mode_from_label_suffix: true
+      safe_args:
+        - "mode"
+
+  - canonical: "essentials:msg"
+    match:
+      - "^(msg|tell|w|whisper|m)$"
+      - "^essentials:msg$"
+    capture:
+      safe_args:
+        - "target_kind"
+
+  - canonical: "essentials:home"
+    match:
+      - "^(home|homes)$"
+      - "^essentials:home$"
+    capture:
+      safe_args:
+        - "home_kind"
+
+  - canonical: "essentials:spawn"
+    match:
+      - "^spawn$"
+      - "^essentials:spawn$"
+
+  - canonical: "essentials:tpa"
+    match:
+      - "^(tpa|call)$"
+      - "^essentials:tpa$"
+    capture:
+      safe_args:
+        - "target_kind"
+
+  - canonical: "essentials:tpaccept"
+    match:
+      - "^(tpaccept|tpyes)$"
+      - "^essentials:tpaccept$"
+
+  - canonical: "essentials:tp"
+    match:
+      - "^(tp|teleport|tpo|tphere|tppos)$"
+      - "^essentials:tp$"
+
+  - canonical: "bukkit:plugins"
+    match:
+      - "^(plugins|pl)$"
+      - "^bukkit:plugins$"
+
+  - canonical: "paper:tps"
+    match:
+      - "^tps$"
+      - "^paper:tps$"
+
+  - canonical: "worldedit:replace"
+    match:
+      - "^//(re|rep|replace)$"
+    capture:
+      safe_args:
+        - "material"
+
+  - canonical: "worldedit:set"
+    match:
+      - "^//(set|s)$"
+    capture:
+      safe_args:
+        - "material"
+
+  - canonical: "worldedit:copy"
+    match:
+      - "^//(copy|c)$"
+
+  - canonical: "worldedit:paste"
+    match:
+      - "^//(paste|p)$"
+
+  - canonical: "worldedit:undo"
+    match:
+      - "^//(undo|u)$"
